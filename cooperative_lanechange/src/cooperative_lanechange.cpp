@@ -923,15 +923,6 @@ namespace cooperative_lanechange
             lanelet::BasicLineString2d new_points = create_lanechange_path(start,lanelets_in_path[lane_change_iteration], end, lanelets_in_path[lane_change_iteration+1]);
             centerline_points.insert(centerline_points.end(),new_points.begin(),new_points.end() );
 
-            if(lanelets_in_path.size() > 2){
-                //Add straightline centerline points
-                int i = lane_change_iteration;
-                while(i < lanelets_in_path.size() -1){
-                    i++;
-                    lanelet::BasicLineString2d straight_path = lanelets_in_path[i].centerline2d().basicLineString();
-                    centerline_points.insert(centerline_points.end(),straight_path.begin(), straight_path.end() );
-                }
-            }
     
         return centerline_points;
         
