@@ -202,7 +202,7 @@ namespace route {
                                 destination_points_in_map_with_vehicle.back(),
                                 world_model_->getMap(), world_model_->getMapRoutingGraph());
             // check if route successed
-            if(!route)
+            if(!route || route->shortestPath().size() == 0)
             {
                 ROS_ERROR_STREAM("Cannot find a route passing all destinations.");
                 resp.errorStatus = cav_srvs::SetActiveRouteResponse::ROUTING_FAILURE;
@@ -360,6 +360,7 @@ namespace route {
         if (!points.empty())
         {
             ROS_WARN_STREAM("No central line points! Returning");
+            return;
         }
 
         // create the marker msgs
@@ -555,12 +556,13 @@ namespace route {
     {
         if(reroutingChecker()==true)
         {
+           ROS_INFO_STREAM("Rerouting");
            this->rs_worker_.on_route_event(RouteStateWorker::RouteEvent::ROUTE_INVALIDATION);
            publish_route_event(cav_msgs::RouteEvent::ROUTE_INVALIDATION);
            auto route = reroute_after_route_invalidation(destination_points_in_map_);
 
            // check if route successed
-           if(!route)
+           if(!route || route->shortestPath().size() == 0)
             {
                 ROS_ERROR_STREAM("Cannot find a route passing all destinations.");
                 this->rs_worker_.on_route_event(RouteStateWorker::RouteEvent::ROUTE_GEN_FAILED);

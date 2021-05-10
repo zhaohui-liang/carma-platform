@@ -15,6 +15,7 @@
  */
 
 #include "route_state_worker.h"
+#include <ros/ros.h>
 
 namespace route {
 
@@ -60,5 +61,7 @@ namespace route {
             // should not reach here
             throw std::invalid_argument("Current state is illegal: " + std::to_string(state_));
         }
+
+        ROS_INFO_STREAM("RouteEvent: " << event << " caused RouteState: " << state_);
     }
 }
