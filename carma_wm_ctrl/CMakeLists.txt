@@ -18,6 +18,7 @@ set ( PKG_CATKIN_DEPS
   carma_wm
   cav_msgs
   roscpp
+  visualization_msgs
 )
 
 ## Find required catkin packages

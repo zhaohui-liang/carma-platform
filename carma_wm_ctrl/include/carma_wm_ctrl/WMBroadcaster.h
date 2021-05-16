@@ -132,8 +132,9 @@ public:
    * \throw InvalidObjectStateError if base_map is not set or the base_map's georeference is empty
    * NOTE:Currently this function only checks lanelets and will be expanded 
    * to areas in the future.
+   * // TODO comments
    */
-  lanelet::ConstLaneletOrAreas getAffectedLaneletOrAreas(const cav_msgs::TrafficControlMessageV01& geofence_msg);
+  lanelet::ConstLaneletOrAreas getAffectedLaneletOrAreas(const std::vector<lanelet::BasicPoint2d>& gf_pts);
 
   /*!
    * \brief Sets the max lane width in meters. Geofence points are associated to a lanelet if they are 
@@ -225,6 +226,15 @@ private:
   bool shouldChangeControlLine(const lanelet::ConstLaneletOrArea& el,const lanelet::RegulatoryElementConstPtr& regem, std::shared_ptr<Geofence> gf_ptr) const;
   void addPassingControlLineFromMsg(std::shared_ptr<Geofence> gf_ptr, const cav_msgs::TrafficControlMessageV01& msg_v01, const std::vector<lanelet::Lanelet>& affected_llts) const; 
   std::unordered_set<lanelet::Lanelet> filterSuccessorLanelets(const std::unordered_set<lanelet::Lanelet>& possible_lanelets, const std::unordered_set<lanelet::Lanelet>& root_lanelets);
+  /**
+   * TODO
+   */ 
+  std::vector<lanelet::BasicPoint2d> extractControlNodes(const cav_msgs::TrafficControlMessageV01& tcmV01);
+
+  /**
+   * TODO
+   */ 
+  void visualizeGeofence(std::shared_ptr<Geofence> geofence, bool active_status) const;
   lanelet::LaneletMapPtr base_map_;
   lanelet::LaneletMapPtr current_map_;
   lanelet::Velocity config_limit;
@@ -254,7 +264,7 @@ private:
   std::vector<autoware_lanelet2_msgs::MapBin> map_update_message_queue_; 
 
   size_t update_count_ = 0; // Records the total number of sent map updates. Used as the set value for update.header.seq
-
+  size_t current_viz_id_ = 0; // Visualization id matching each unique geofence. Monotonically increasing value
 };
 }  // namespace carma_wm_ctrl
 

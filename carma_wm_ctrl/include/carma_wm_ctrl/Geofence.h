@@ -42,14 +42,16 @@ class Geofence
 {
 public:
   boost::uuids::uuid id_;  // Unique id of this geofence
+  size_t viz_id_ = 0; // Unique id inside the using node for visualization. Should monotonically increase for each geofence
 
   std::vector<GeofenceSchedule> schedules;  // The schedules this geofence operates with
 
   std::string proj;
 
   std::string type_;
-  
 
+  std::vector<lanelet::BasicPoint2d> source_points_; // The points used to derive the affected elements for this geofence
+  
   // TODO Add rest of the attributes provided by geofences in the future
 /* following regulatory element pointer is a placeholder created with rule name 'basic_regulatory_element' to later point to 
 specific type of regulatory element (such as digital speed limit, passing control line)*/

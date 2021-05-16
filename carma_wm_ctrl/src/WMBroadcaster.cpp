@@ -38,6 +38,8 @@
 #include <carma_wm/Geometry.h>
 #include <math.h>
 #include <boost/date_time/date_defs.hpp>
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 
 namespace carma_wm_ctrl
 {
@@ -90,14 +92,75 @@ void WMBroadcaster::baseMapCallback(const autoware_lanelet2_msgs::MapBinConstPtr
   map_pub_(compliant_map_msg);
 };
 
+void WMBroadcaster::visualizeGeofence(std::shared_ptr<Geofence> geofence, bool active_status) const {
+  if (!current_map_) {
+    ROS_ERROR_STREAM("No map when trying to publish geofence visualization");
+    return;
+  }
+
+  visualization_msgs::MarkerArray marker_array;
+
+  // Centerline Points Marker
+  visualization_msgs::Marker points_marker;
+  points_marker.header.frame_id = "map";
+  points_marker.header.stamp = ros::Time();
+  points_marker.ns = "environment/geofence/points";
+  points_marker.id = gf_ptr->viz_id_;
+  points_marker.type = visualization_msgs::Marker::POINTS;
+
+  if (active_status) {
+    points_marker.action = visualization_msgs::Marker::ADD;
+  } else {
+    points_marker.action = visualization_msgs::Marker::DELETE;
+  }
+  
+  points_marker.pose.position.x = 0;
+  points_marker.pose.position.y = 0;
+  points_marker.pose.position.z = 0;
+  points_marker.pose.orientation.x = 0.0;
+  points_marker.pose.orientation.y = 0.0;
+  points_marker.pose.orientation.z = 0.0;
+  points_marker.pose.orientation.w = 1.0;
+
+  points_marker.scale.x = 0.5;
+  points_marker.scale.y = 0.5;
+  points_marker.color.a = 1.0; // Don't forget to set the alpha!
+  points_marker.color.r = 1; // Orange points
+  points_marker.color.g = 0.65;
+  points_marker.color.b = 0.0;
+
+  points_marker.points.reserve(geofence->source_points_.size());
+  points_marker.colors.reserve(geofence->source_points_.size());
+
+  for (auto p : geofence->source_points_) {  // Populate points array
+    geometry_msgs/Point p_mkr;
+    p_mkr.x = p.x();
+    p_mkr.y = p.y();
+    p_mkr.z = 0;
+    points_marker.points.push_back(p_mkr);
+    points_marker.colors.push_back(marker.color);
+  }
+
+  marker_array.markers.push_back(points_marker)
+
+  // TODO publish
+
+}
+
 std::shared_ptr<Geofence> WMBroadcaster::geofenceFromMsg(const cav_msgs::TrafficControlMessageV01& msg_v01)
 {
   auto gf_ptr = std::make_shared<Geofence>(Geofence());
   // Get ID
   std::copy(msg_v01.id.id.begin(), msg_v01.id.id.end(), gf_ptr->id_.begin());
 
+  // Set Viz ID
+  current_viz_id_++;
+  gf_ptr->viz_id_ = current_viz_id_;
+
   // Get affected lanelet or areas by converting the georeference and querying the map using points in the geofence
-  gf_ptr->affected_parts_ = getAffectedLaneletOrAreas(msg_v01);
+  
+  gf_ptr->source_points_ = extractControlNodes(msg_v01);
+  gf_ptr->affected_parts_ = getAffectedLaneletOrAreas(gf_ptr->source_points_);
 
   std::vector<lanelet::Lanelet> affected_llts;
   std::vector<lanelet::Area> affected_areas;
@@ -466,14 +529,8 @@ void WMBroadcaster::setConfigSpeedLimit(double cL)
   config_limit = lanelet::Velocity(cL * lanelet::units::MPH());
 }
 
-// currently only supports geofence message version 1: TrafficControlMessageV01 
-lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_msgs::TrafficControlMessageV01& tcmV01)
-{
-  ROS_DEBUG_STREAM("Getting affected lanelets");
-  if (!current_map_)
-  {
-    throw lanelet::InvalidObjectStateError(std::string("Base lanelet map is not loaded to the WMBroadcaster"));
-  }
+std::vector<lanelet::BasicPoint2d> WMBroadcaster::extractControlNodes(const cav_msgs::TrafficControlMessageV01& tcmV01) {
+
   if (base_map_georef_ == "")
     throw lanelet::InvalidObjectStateError(std::string("Base lanelet map has empty proj string loaded as georeference. Therefore, WMBroadcaster failed to\n ") +
                                           std::string("get transformation between the geofence and the map"));
@@ -481,7 +538,9 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
   PJ* geofence_in_map_proj = proj_create_crs_to_crs(PJ_DEFAULT_CTX, tcmV01.geometry.proj.c_str(), base_map_georef_.c_str(), nullptr);
   
   // convert all geofence points into our map's frame
-  std::vector<lanelet::Point3d> gf_pts;
+  std::vector<lanelet::BasicPoint2d> gf_pts;
+  gf_pts.reserve(tcmV01.geometry.nodes.size());
+
   for (auto pt : tcmV01.geometry.nodes)
   { 
     ROS_DEBUG_STREAM("Before conversion: Point X "<< pt.x <<" Before conversion: Point Y "<< pt.y);
@@ -489,9 +548,20 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
     PJ_COORD c {{pt.x, pt.y, 0, 0}}; // z is not currently used
     PJ_COORD c_out;
     c_out = proj_trans(geofence_in_map_proj, PJ_FWD, c);
-    gf_pts.push_back(lanelet::Point3d{current_map_->pointLayer.uniqueId(), c_out.xyz.x, c_out.xyz.y});
+    gf_pts.push_back(lanelet::BasicPoint2d{c_out.xyz.x, c_out.xyz.y});
 
     ROS_DEBUG_STREAM("After conversion: Point X "<< gf_pts.back().x() <<" After conversion: Point Y "<< gf_pts.back().y());
+  }
+  return gf_pts;
+}
+
+// currently only supports geofence message version 1: TrafficControlMessageV01 
+lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const std::vector<lanelet::BasicPoint2d>& gf_pts)
+{
+  ROS_DEBUG_STREAM("Getting affected lanelets");
+  if (!current_map_)
+  {
+    throw lanelet::InvalidObjectStateError(std::string("Base lanelet map is not loaded to the WMBroadcaster"));
   }
 
   // Logic to detect which part is affected
@@ -512,7 +582,7 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
       
       nearest_count += 10; // Increase the index search radius by 10 each loop until all nearby lanelets are found
 
-      for (const auto& ll_pair : lanelet::geometry::findNearest(current_map_->laneletLayer, gf_pts[idx].basicPoint2d(), nearest_count)) { // Get the nearest lanelets and iterate over them
+      for (const auto& ll_pair : lanelet::geometry::findNearest(current_map_->laneletLayer, gf_pts[idx], nearest_count)) { // Get the nearest lanelets and iterate over them
         auto ll = std::get<1>(ll_pair);
 
         if (possible_lanelets.find(ll) != possible_lanelets.end()) { // Skip if already found
@@ -554,7 +624,7 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
     for (auto llt: possible_lanelets)
     {
       ROS_DEBUG_STREAM("Evaluating lanelet: " << llt.id());
-      lanelet::BasicLineString2d gf_dir_line({gf_pts[idx].basicPoint2d(), gf_pts[idx+1].basicPoint2d()});
+      lanelet::BasicLineString2d gf_dir_line({gf_pts[idx], gf_pts[idx+1]});
       lanelet::BasicLineString2d llt_boundary({(llt.leftBound2d().end() -1)->basicPoint2d(), (llt.rightBound2d().end() - 1)->basicPoint2d()});
       
       // record the llts that are on the same dir
@@ -564,7 +634,7 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
         affected_lanelets.insert(llt);
       }
       // check condition if two geofence points are in one lanelet then check matching direction and record it also
-      else if (boost::geometry::within(gf_pts[idx+1].basicPoint2d(), llt.polygon2d()) && 
+      else if (boost::geometry::within(gf_pts[idx+1], llt.polygon2d()) && 
               affected_lanelets.find(llt) == affected_lanelets.end())
       { 
         ROS_DEBUG_STREAM("Within new lanelet");
@@ -572,8 +642,8 @@ lanelet::ConstLaneletOrAreas WMBroadcaster::getAffectedLaneletOrAreas(const cav_
                                       ((llt.leftBound2d().end() - 1)->basicPoint2d().y() + (llt.rightBound2d().end() - 1)->basicPoint2d().y())/2});
         // turn into vectors
         Eigen::Vector2d vec_to_median(median);
-        Eigen::Vector2d vec_to_gf_start(gf_pts[idx].basicPoint2d());
-        Eigen::Vector2d vec_to_gf_end(gf_pts[idx + 1].basicPoint2d());
+        Eigen::Vector2d vec_to_gf_start(gf_pts[idx]);
+        Eigen::Vector2d vec_to_gf_end(gf_pts[idx + 1]);
 
         // Get vector from start to external point
         Eigen::Vector2d start_to_median = vec_to_median - vec_to_gf_start;
