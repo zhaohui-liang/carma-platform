@@ -481,12 +481,20 @@ namespace route {
                 ROS_ERROR_STREAM("Failed to set the current speed limit. Valid traffic rules object could not be built.");
             }
             // check if we left the seleted route by cross track error
-            bool departed = crosstrack_error_check(msg, current_lanelet);
-            if (departed)
-                {
-                    this->rs_worker_.on_route_event(RouteStateWorker::RouteEvent::ROUTE_DEPARTED);
-                    publish_route_event(cav_msgs::RouteEvent::ROUTE_DEPARTED);
-                }
+
+            bool departed;
+            if(this->rs_worker_.get_route_state() == RouteStateWorker::RouteState::FOLLOWING)//Check that the route is being followed
+            {                        
+                ROS_WARN_STREAM("Begin Route Departed Check");
+
+                departed = crosstrack_error_check(msg, current_lanelet);
+                ROS_ERROR_STREAM("Departed status: " << departed);
+                if (departed)
+                    {
+                        this->rs_worker_.on_route_event(RouteStateWorker::RouteEvent::ROUTE_DEPARTED);
+                        publish_route_event(cav_msgs::RouteEvent::ROUTE_DEPARTED);
+                    }
+            }
 
             // check if we reached our destination be remaining down track distance
             auto end_point_3d = world_model_->getRoute()->getEndPoint();
@@ -626,6 +634,7 @@ namespace route {
 
     bool RouteGeneratorWorker::crosstrack_error_check(const geometry_msgs::PoseStampedConstPtr& msg, lanelet::ConstLanelet current)
     {
+        ROS_WARN_STREAM("Crosstrack Error Check Start");
        lanelet::BasicPoint2d position;
 
         position.x()= msg->pose.position.x;
@@ -637,17 +646,20 @@ namespace route {
             return false;
         }
 
-        ROS_DEBUG_STREAM("LLt Polygon Dimensions1: " << current.polygon2d().front().x()<< ", "<< current.polygon2d().front().y());
-        ROS_DEBUG_STREAM("LLt Polygon Dimensions2: " << current.polygon2d().back().x()<< ", "<< current.polygon2d().back().y());
-        ROS_DEBUG_STREAM("Distance1: "<< boost::geometry::distance(position, current.polygon2d())<<" Crosstrack: "<< cross_track_dist );
+        ROS_WARN_STREAM("LLt Polygon Dimensions1: " << current.polygon2d().front().x()<< ", "<< current.polygon2d().front().y());
+        ROS_WARN_STREAM("LLt Polygon Dimensions2: " << current.polygon2d().back().x()<< ", "<< current.polygon2d().back().y());
+        ROS_WARN_STREAM("Distance1: "<< boost::geometry::distance(position, current.polygon2d())<<" Crosstrack: "<< cross_track_dist );
     
         if (boost::geometry::distance(position, current.polygon2d()) > cross_track_dist) //Evaluate lanelet crosstrack distance from vehicle
             {
                 cte_count_++;
+                ROS_ERROR_STREAM("Crosstrack error count:"<< cte_count_);
+                ROS_ERROR_STREAM("Crosstrack error maximum:"<< cte_count_max_);
 
                 if(cte_count_ > cte_count_max_) //If the distance exceeds the crosstrack distance a certain number of times, report that the route has been departed
                     {
                         cte_count_ = 0;
+                        ROS_ERROR_STREAM("DEPARTED ROUTE");
                         return true;
                     }
                 else 
@@ -656,6 +668,7 @@ namespace route {
         else
             {
                 cte_count_ = 0;
+                ROS_WARN_STREAM("ROUTE NOT DEPARTED");
                 return false;
             }
  
