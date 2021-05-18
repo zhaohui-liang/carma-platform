@@ -493,6 +493,7 @@ namespace route {
                     {
                         this->rs_worker_.on_route_event(RouteStateWorker::RouteEvent::ROUTE_DEPARTED);
                         publish_route_event(cav_msgs::RouteEvent::ROUTE_DEPARTED);
+                        ROS_WARN_STREAM("ROUTE_DEPARTED Published");
                     }
             }
 
