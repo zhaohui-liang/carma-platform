@@ -145,13 +145,39 @@ namespace route_following_plugin
         }
         
         double current_downtrack = wm_->routeTrackPos(current_loc_).downtrack;
+        ROS_DEBUG_STREAM("Current downtrack: "<<current_downtrack);
+        std::cout<<"Shortest_path:";
+        auto shortest_path = wm_->getRoute()->shortestPath();
+        for(int i=0;i<shortest_path.size();i++){
+            std::cout<<shortest_path[i].id()<<" ";
+        }
+        std::cout<<"\n";
+         auto current_lanelets = lanelet::geometry::findNearest(wm_->getMap()->laneletLayer, current_loc_, 10);
+         lanelet::ConstLanelet current_lanelet;
+        int last_lanelet_index = -1;
+        for (auto llt : current_lanelets)
+        {
+            if (boost::geometry::within(current_loc_, llt.second.polygon2d()))
+            {
+                int potential_index = findLaneletIndexFromPath(llt.second.id(), shortest_path);
+                if (potential_index != -1)
+                {
+                    last_lanelet_index = potential_index;
+                    current_lanelet = shortest_path[last_lanelet_index];
+                    break;
+                }
+            }
+        }
+        ROS_DEBUG_STREAM("Current lanelet index:"<<last_lanelet_index);
         
         //Return the set of maneuvers which intersect with min_plan_duration
         int i=0;
         double planned_time = 0.0;
+        ROS_DEBUG_STREAM("Starting While Loop in plan maneuver cb");
         while(planned_time < min_plan_duration_ && i < latest_maneuver_plan_.size()){
             //Ignore plans for distance already covered
             if(GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], end_dist) < current_downtrack){
+                ROS_DEBUG_STREAM("End distance of maneuver < current downtrack, skipping maneuver index "<< i);
                 ++i;
                 continue;
             }
@@ -162,16 +188,17 @@ namespace route_following_plugin
             double maneuver_start_dist = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], start_dist);
             double maneuver_end_dist = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], end_dist);
             double duration = (maneuver_end_dist - maneuver_start_dist) / (0.5 * cur_plus_target);
+            ROS_DEBUG_STREAM("Adding maneuver index "<<i<< " to plan. duration of maneuver:"<<duration);
             //Throw exception if cur_plus_target = 0.0
             if(!std::isfinite(duration)){
                 throw std::invalid_argument("Maneuver duration is invalid");
             }
             planned_time += duration;
-            
+            ROS_DEBUG_STREAM("Planned duration :"<<planned_time);
             resp.new_plan.maneuvers.push_back(latest_maneuver_plan_[i]);
             ++i;
         }
-        
+        ROS_DEBUG_STREAM("Exited while loop");
         if(resp.new_plan.maneuvers.size() == 0)
         {
             ROS_WARN_STREAM("Cannot plan maneuver because no route is found");
@@ -181,10 +208,24 @@ namespace route_following_plugin
         //update start distance of first maneuver and time for all maneuvers
         setManeuverStartDist(resp.new_plan.maneuvers.front(), current_downtrack);
         //Update time progress for maneuvers
+        ROS_DEBUG_STREAM("Updating Time Progress");
         updateTimeProgress(resp.new_plan.maneuvers, ros::Time::now());
         //update starting speed of first maneuver
         updateStartingSpeed(resp.new_plan.maneuvers.front(), current_speed_);
-
+        ROS_DEBUG_STREAM("Printing maneuvers added to response");
+        ROS_DEBUG_STREAM("Maneuver type meaning 0: LANE_FOLLOW , 1: LANE_CHANGE");
+        ros::Time maneuver_starting_time = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers.front(), start_time);
+        for(int i =0;i<resp.new_plan.maneuvers.size();i++){
+            double starting_dist = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], start_dist);
+            double ending_dist = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], end_dist);
+            double starting_time = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], start_time).toSec() - maneuver_starting_time.toSec();
+            double duration_from_start = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], end_time).toSec() - maneuver_starting_time.toSec();
+            double starting_speed = GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], start_speed);
+            double target_speed =  GET_MANEUVER_PROPERTY(resp.new_plan.maneuvers[i], end_speed);
+            ROS_DEBUG_STREAM("Maneuver type: "<<int(resp.new_plan.maneuvers.back().type)<<" Start dist: "<<starting_dist <<" End dist: "<<ending_dist<<" \nstarting_time: "<<starting_time<<" ending_time: "<<duration_from_start);
+            ROS_DEBUG_STREAM("starting speed: "<<starting_speed<<" target_speed: "<<target_speed);
+        }
+        ROS_DEBUG_STREAM("Exiting plan maneuver cb");
         return true;
     }
 
