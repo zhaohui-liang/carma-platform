@@ -82,7 +82,7 @@ namespace route_following_plugin
 
     std::vector<cav_msgs::Maneuver> RouteFollowingPlugin::route_cb(const lanelet::routing::LaneletPath& route_shortest_path){
         std::vector <cav_msgs::Maneuver> maneuvers;
-        maneuvers.reserve(route_shortest_path.size());
+        
         //This function calculates the maneuver plan every time the route is set
         ROS_DEBUG_STREAM("New route created");
         //Go through entire route - identify lane changes and fill in the spaces with lane following
@@ -92,7 +92,8 @@ namespace route_following_plugin
             ROS_WARN_STREAM("Cannot find any lanelet in map!");
             return maneuvers; 
         }
-
+        
+        maneuvers.reserve(route_shortest_path.size());
         double route_length = wm_->getRouteEndTrackPos().downtrack;
         double start_dist = 0.0;
         double end_dist = 0.0;
@@ -136,6 +137,8 @@ namespace route_following_plugin
 
     bool RouteFollowingPlugin::plan_maneuver_cb(cav_srvs::PlanManeuversRequest &req, cav_srvs::PlanManeuversResponse &resp)
     { 
+        //TO DO - verify new play is empty - are we adding to existing plan
+
         if(latest_maneuver_plan_.empty()){
             ROS_ERROR_STREAM("A maneuver plan has not been generated");
             return false;
@@ -152,9 +155,18 @@ namespace route_following_plugin
                 ++i;
                 continue;
             }
-            double maneuver_start_time = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], start_time).toSec();
-            double maneuver_end_time = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i],end_time).toSec();
-            planned_time += maneuver_end_time - maneuver_start_time;
+            double maneuver_start_speed = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], start_speed);
+            double manever_end_speed = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], end_speed);
+            double cur_plus_target = maneuver_start_speed + manever_end_speed;
+
+            double maneuver_start_dist = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], start_dist);
+            double maneuver_end_dist = GET_MANEUVER_PROPERTY(latest_maneuver_plan_[i], end_dist);
+            double duration = (maneuver_end_dist - maneuver_start_dist) / (0.5 * cur_plus_target);
+            //Throw exception if cur_plus_target = 0.0
+            if(!std::isfinite(duration)){
+                throw std::invalid_argument("Maneuver duration is invalid");
+            }
+            planned_time += duration;
             
             resp.new_plan.maneuvers.push_back(latest_maneuver_plan_[i]);
             ++i;
@@ -181,13 +193,19 @@ namespace route_following_plugin
         ros::Time prev_time = time_progress;
 
         for(auto& maneuver : maneuvers){
-            double maneuver_start_speed = GET_MANEUVER_PROPERTY(maneuver,start_speed);
-            double manever_end_speed = GET_MANEUVER_PROPERTY(maneuver,end_speed);
+            double maneuver_start_speed = GET_MANEUVER_PROPERTY(maneuver, start_speed);
+            double manever_end_speed = GET_MANEUVER_PROPERTY(maneuver, end_speed);
             double cur_plus_target = maneuver_start_speed + manever_end_speed;
             ros::Duration maneuver_duration;
-            double maneuver_start_dist = GET_MANEUVER_PROPERTY(maneuver,start_dist);
-            double maneuver_end_dist = GET_MANEUVER_PROPERTY(maneuver,end_dist);
-            maneuver_duration = ros::Duration((maneuver_end_dist - maneuver_start_dist) / (0.5 * cur_plus_target));
+            double maneuver_start_dist = GET_MANEUVER_PROPERTY(maneuver, start_dist);
+            double maneuver_end_dist = GET_MANEUVER_PROPERTY(maneuver, end_dist);
+            double duration = (maneuver_end_dist - maneuver_start_dist) / (0.5 * cur_plus_target);
+            //Throw exception if cur_plus_target = 0.0
+            if(!std::isfinite(duration)){
+                throw std::invalid_argument("Maneuver duration is invalid");
+            }
+            maneuver_duration = ros::Duration(duration);
+
 
             time_progress += maneuver_duration;
             switch(maneuver.type){
@@ -342,6 +360,9 @@ namespace route_following_plugin
     bool RouteFollowingPlugin::isLaneChangeNeeded(lanelet::routing::LaneletRelations relations, lanelet::Id target_id) const
     {
         //This method is constrained to the lanelet being checked against being accessible. A non-accessible target lanelet would result in unspecified behavior
+        if(relations.empty()){
+            return false;
+        }
         for(auto& relation : relations)
         {
             if(relation.lanelet.id() == target_id && relation.relationType == lanelet::routing::RelationType::Successor)
@@ -354,7 +375,8 @@ namespace route_following_plugin
 
     double RouteFollowingPlugin::findSpeedLimit(const lanelet::ConstLanelet& llt)
     {
-        if(lanelet::Optional<carma_wm::TrafficRulesConstPtr> traffic_rules = wm_->getTrafficRules())
+        lanelet::Optional<carma_wm::TrafficRulesConstPtr> traffic_rules = wm_->getTrafficRules();
+        if(traffic_rules)
         {
            return (*traffic_rules)->speedLimit(llt).speedLimit.value();
         } 
