@@ -534,6 +534,7 @@ namespace cooperative_lanechange
             double current_downtrack = wm_->routeTrackPos(state_pos).downtrack;
             int nearest_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(route_geometry, wm_, current_downtrack);
             int nearest_pt_index_with_distance2d = basic_autonomy::waypoint_generation::get_nearest_point_index(route_geometry, state);
+            nearest_pt_index = nearest_pt_index_with_distance2d;
             std::cout<<"Nearest pt index with downtrack: "<<nearest_pt_index<<" with distance2d: "<<nearest_pt_index_with_distance2d<<std::endl;
             std::cout<<"Downtrack with downtrack method: "<<wm_->routeTrackPos(route_geometry[nearest_pt_index]).downtrack<<
                     "  with distance2d:"<<wm_->routeTrackPos(route_geometry[nearest_pt_index_with_distance2d]).downtrack <<
@@ -604,6 +605,7 @@ namespace cooperative_lanechange
         ROS_DEBUG_STREAM("Input points size in: compose_trajectory_from_centerline" << points.size());
         int nearest_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(points, wm_, state);
         int nearest_pt_index_using_dist2d = basic_autonomy::waypoint_generation::get_nearest_point_index(points, state);
+        nearest_pt_index = nearest_pt_index_using_dist2d;
         lanelet::BasicPoint2d req_point;
         req_point.x() = state.X_pos_global;
         req_point.y() = state.Y_pos_global;
@@ -639,6 +641,7 @@ namespace cooperative_lanechange
         ROS_DEBUG_STREAM("Before removing extra buffer points, future_geom_points.size()" << future_geom_points.size());
         int end_dist_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(future_geom_points, wm_, ending_state_before_buffer_);
         nearest_pt_index_using_dist2d = basic_autonomy::waypoint_generation::get_nearest_point_index(future_geom_points, ending_state_before_buffer_);
+        end_dist_pt_index = nearest_pt_index_using_dist2d;
         req_point.x() = ending_state_before_buffer_.X_pos_global;
         req_point.y() = ending_state_before_buffer_.Y_pos_global;
         ROS_INFO_STREAM("ending pt index with downtrack method:"<< end_dist_pt_index<<" with distance2d: "<<nearest_pt_index_using_dist2d);
