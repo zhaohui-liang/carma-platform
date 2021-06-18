@@ -533,6 +533,16 @@ namespace cooperative_lanechange
             lanelet::BasicPoint2d state_pos(state.X_pos_global, state.Y_pos_global);
             double current_downtrack = wm_->routeTrackPos(state_pos).downtrack;
             int nearest_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(route_geometry, wm_, current_downtrack);
+            int nearest_pt_index_with_distance2d = basic_autonomy::waypoint_generation::get_nearest_point_index(route_geometry, state);
+            std::cout<<"Nearest pt index with downtrack: "<<nearest_pt_index<<" with distance2d: "<<nearest_pt_index_with_distance2d<<std::endl;
+            std::cout<<"Downtrack with downtrack method: "<<wm_->routeTrackPos(route_geometry[nearest_pt_index]).downtrack<<
+                    "  with distance2d:"<<wm_->routeTrackPos(route_geometry[nearest_pt_index_with_distance2d]).downtrack <<
+                    " Target:"<<current_downtrack<<std::endl;
+            
+            std::cout<<"Point with downtrack method x:"<< route_geometry[nearest_pt_index].x()<<" y:"<<route_geometry[nearest_pt_index].y()<<std::endl;
+            std::cout<<"Point with distance2d method x:"<< route_geometry[nearest_pt_index_with_distance2d].x()<<" y:"<<route_geometry[nearest_pt_index_with_distance2d].y()<<std::endl;
+            std::cout<<"Point from state x:"<<state.X_pos_global<<" y:"<<state.Y_pos_global<<std::endl;
+
             int ending_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(route_geometry, wm_, ending_downtrack); 
             ROS_DEBUG_STREAM("Nearest pt index in maneuvers to points:"<<nearest_pt_index);
             ROS_DEBUG_STREAM("Ending point index in maneuvers to points:"<<ending_pt_index);
@@ -593,6 +603,18 @@ namespace cooperative_lanechange
     {
         ROS_DEBUG_STREAM("Input points size in: compose_trajectory_from_centerline" << points.size());
         int nearest_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(points, wm_, state);
+        int nearest_pt_index_using_dist2d = basic_autonomy::waypoint_generation::get_nearest_point_index(points, state);
+        lanelet::BasicPoint2d req_point;
+        req_point.x() = state.X_pos_global;
+        req_point.y() = state.Y_pos_global;
+        ROS_INFO_STREAM("Nearest pt index with downtrack method: "<<nearest_pt_index<<" using distance2d: "<< nearest_pt_index_using_dist2d);
+        ROS_INFO_STREAM("Downtrack with downtrack method: "<<wm_->routeTrackPos(points[nearest_pt_index].point).downtrack<<
+                        " using distance2d: "<<wm_->routeTrackPos(points[nearest_pt_index_using_dist2d].point).downtrack<<
+                        " target downtrack: "<< wm_->routeTrackPos(req_point).downtrack);
+        
+        ROS_INFO_STREAM("Point with downtrack method x:"<< points[nearest_pt_index].point.x()<<" y:"<<points[nearest_pt_index].point.y());
+        ROS_INFO_STREAM("Point with distance2d method x:"<<points[nearest_pt_index_using_dist2d].point.x()<<" y:"<<points[nearest_pt_index_using_dist2d].point.y());
+        ROS_INFO_STREAM("Target point x: "<<state.X_pos_global<<" y: "<<state.Y_pos_global);
         ROS_DEBUG_STREAM("nearest_pt_index: " << nearest_pt_index);
 
 
@@ -616,6 +638,18 @@ namespace cooperative_lanechange
         // Remove extra points
         ROS_DEBUG_STREAM("Before removing extra buffer points, future_geom_points.size()" << future_geom_points.size());
         int end_dist_pt_index = basic_autonomy::waypoint_generation::get_nearest_index_by_downtrack(future_geom_points, wm_, ending_state_before_buffer_);
+        nearest_pt_index_using_dist2d = basic_autonomy::waypoint_generation::get_nearest_point_index(future_geom_points, ending_state_before_buffer_);
+        req_point.x() = ending_state_before_buffer_.X_pos_global;
+        req_point.y() = ending_state_before_buffer_.Y_pos_global;
+        ROS_INFO_STREAM("ending pt index with downtrack method:"<< end_dist_pt_index<<" with distance2d: "<<nearest_pt_index_using_dist2d);
+        ROS_INFO_STREAM("Downtrack using downtrack method: "<<wm_->routeTrackPos(future_geom_points[end_dist_pt_index]).downtrack <<
+                    " using distance2d: "<<wm_->routeTrackPos(future_geom_points[nearest_pt_index_using_dist2d]).downtrack<<
+                    " target downtrack: "<< wm_->routeTrackPos(req_point).downtrack);
+        
+        ROS_INFO_STREAM("Point using downtrack method x: "<< future_geom_points[end_dist_pt_index].x()<<" y:"<<future_geom_points[end_dist_pt_index].y());
+        ROS_INFO_STREAM("Point using distance2d method x: "<< future_geom_points[nearest_pt_index_using_dist2d].x()<<" y:"<<future_geom_points[nearest_pt_index_using_dist2d].y());
+        ROS_INFO_STREAM("Target point from state x: "<<ending_state_before_buffer_.X_pos_global<<" y: "<<ending_state_before_buffer_.Y_pos_global);
+
         future_geom_points.resize(end_dist_pt_index + 1);
         times.resize(end_dist_pt_index + 1);
         final_yaw_values.resize(end_dist_pt_index + 1);
