@@ -17,18 +17,13 @@
 #include "mobilitypath_visualizer.h"
 #include <gtest/gtest.h>
 #include <ros/ros.h>
-#include <lanelet2_extension/projection/local_frame_projector.h>
 
 TEST(MobilityPathVisualizerTest, TestComposeVisualizationMarker)
 {
     mobilitypath_visualizer::MobilityPathVisualizer viz_node;
-    
     // 1 to 1 transform
-    std::string base_proj = lanelet::projection::LocalFrameProjector::ECEF_PROJ_STR;
-    std_msgs::String msg;
-    msg.data = base_proj;
-    std_msgs::StringConstPtr msg_ptr(new std_msgs::String(msg));
-    viz_node.georeferenceCallback(msg_ptr);  // Set projection
+    tf2::Transform identity;
+    identity.setIdentity();
     
     // INPUT MSG
     cav_msgs::MobilityPath input_msg;
@@ -86,7 +81,7 @@ TEST(MobilityPathVisualizerTest, TestComposeVisualizationMarker)
 
     expected_msg.markers.push_back(marker);
 
-    auto result = viz_node.composeVisualizationMarker(input_msg, expected_color_blue);
+    auto result = viz_node.composeVisualizationMarker(input_msg, expected_color_blue, identity);
 
     EXPECT_EQ(expected_msg.markers[0].header.frame_id, result.markers[0].header.frame_id);
     EXPECT_EQ(expected_msg.markers[0].header.stamp, result.markers[0].header.stamp);
@@ -115,13 +110,9 @@ TEST(MobilityPathVisualizerTest, TestComposeVisualizationMarker)
 TEST(MobilityPathVisualizerTest, TestECEFToMapPoint)
 {
     mobilitypath_visualizer::MobilityPathVisualizer viz_node;
-
     // 1 to 1 transform
-    std::string base_proj = lanelet::projection::LocalFrameProjector::ECEF_PROJ_STR;
-    std_msgs::String msg;
-    msg.data = base_proj;
-    std_msgs::StringConstPtr msg_ptr(new std_msgs::String(msg));
-    viz_node.georeferenceCallback(msg_ptr);  // Set projection
+    tf2::Transform identity;
+    identity.setIdentity();
 
     cav_msgs::LocationECEF ecef_point;
     ecef_point.ecef_x = 100;
@@ -132,7 +123,7 @@ TEST(MobilityPathVisualizerTest, TestECEFToMapPoint)
     expected_point.y = 2;
     expected_point.z = 3;
 
-    auto result = viz_node.ECEFToMapPoint(ecef_point);
+    auto result = viz_node.ECEFToMapPoint(ecef_point, identity);
 
     EXPECT_NEAR(expected_point.x, result.x, 0.0001);
     EXPECT_NEAR(expected_point.y, result.y, 0.0001);
@@ -142,13 +133,9 @@ TEST(MobilityPathVisualizerTest, TestECEFToMapPoint)
 TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
 {
     mobilitypath_visualizer::MobilityPathVisualizer viz_node;
-
     // 1 to 1 transform
-    std::string base_proj = lanelet::projection::LocalFrameProjector::ECEF_PROJ_STR;
-    std_msgs::String msg;
-    msg.data = base_proj;
-    std_msgs::StringConstPtr msg_ptr(new std_msgs::String(msg));
-    viz_node.georeferenceCallback(msg_ptr);  // Set projection
+    tf2::Transform identity;
+    identity.setIdentity();
     
     // INPUT RESULT STATIC INFO
     visualization_msgs::MarkerArray host_msg;
@@ -179,8 +166,8 @@ TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
 
     // Base test
     // Give CAV Exactly same as Host Marker itself
-    
-    auto result = viz_node.matchTrajectoryTimestamps(host_msg, {host_msg});
+    auto time_now = ros::Time(10.0);
+    auto result = viz_node.matchTrajectoryTimestamps(time_now, {host_msg});
     
     EXPECT_EQ(result[0].markers[0].header.stamp, host_msg.markers[0].header.stamp);
     EXPECT_EQ(result[0].markers[0].id, host_msg.markers[0].id);
@@ -203,7 +190,7 @@ TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
     cav_msg.markers[0].header.stamp = ros::Time(9.96);
     cav_msg.markers[1].header.stamp = ros::Time(10.06);
 
-    result = viz_node.matchTrajectoryTimestamps(host_msg, {cav_msg});
+    result = viz_node.matchTrajectoryTimestamps(time_now, {cav_msg});
     
     visualization_msgs::MarkerArray expected_msg;
     expected_msg = host_msg;
@@ -227,7 +214,7 @@ TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
     cav_msg.markers[0].header.stamp = ros::Time(9.86);
     cav_msg.markers[1].header.stamp = ros::Time(9.96);
     
-    result = viz_node.matchTrajectoryTimestamps(host_msg, {cav_msg});
+    result = viz_node.matchTrajectoryTimestamps(time_now, {cav_msg});
     
     expected_msg.markers[0].id = 1;
     expected_msg.markers[0].header.stamp = ros::Time(10.0);
@@ -243,7 +230,7 @@ TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
     cav_msg.markers[0].header.stamp = ros::Time(9.66);
     cav_msg.markers[1].header.stamp = ros::Time(9.76);
     
-    result = viz_node.matchTrajectoryTimestamps(host_msg, {cav_msg});
+    result = viz_node.matchTrajectoryTimestamps(time_now, {cav_msg});
     
     EXPECT_EQ(0, result.size()); 
 
@@ -251,7 +238,7 @@ TEST(MobilityPathVisualizerTest, TestMatchTrajectoryTimestamps)
     cav_msg.markers[0].header.stamp = ros::Time(11.66);
     cav_msg.markers[1].header.stamp = ros::Time(12.76);
     
-    result = viz_node.matchTrajectoryTimestamps(host_msg, {cav_msg});
+    result = viz_node.matchTrajectoryTimestamps(time_now, {cav_msg});
     
     EXPECT_EQ(0, result.size()); 
 }

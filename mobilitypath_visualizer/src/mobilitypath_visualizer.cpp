@@ -63,13 +63,8 @@ namespace mobilitypath_visualizer {
         // init subscribers
         host_mob_path_sub_ = nh_->subscribe("mobility_path_msg", 1, &MobilityPathVisualizer::callbackMobilityPath, this);
         cav_mob_path_sub_ = nh_->subscribe("incoming_mobility_path", 1, &MobilityPathVisualizer::callbackMobilityPath, this);
-        georeference_sub_ = nh_->subscribe("georeference", 1, &MobilityPathVisualizer::georeferenceCallback, this);
 
-    }
-
-    void MobilityPathVisualizer::georeferenceCallback(const std_msgs::StringConstPtr& msg) 
-    {
-        map_projector_ = std::make_shared<lanelet::projection::LocalFrameProjector>(msg->data.c_str());  // Build projector from proj string
+        tf2_listener_.reset(new tf2_ros::TransformListener(tf2_buffer_));
     }
     
     void MobilityPathVisualizer::callbackMobilityPath(const cav_msgs::MobilityPath& msg)
@@ -79,6 +74,8 @@ namespace mobilitypath_visualizer {
             host_marker_received_ = false;
             return;
         } 
+        ROS_ERROR_STREAM("Received a msg from sender: " << msg.header.sender_id << ", and plan id:" << msg.header.plan_id << ", for receiver:" 
+                            << msg.header.recipient_id << ", time:" << msg.header.timestamp << ", at now: " << std::to_string(ros::Time::now().toSec()));
         ROS_DEBUG_STREAM("Received a msg from sender: " << msg.header.sender_id << ", and plan id:" << msg.header.plan_id << ", for receiver:" 
                             << msg.header.recipient_id << ", time:" << msg.header.timestamp << ", at now: " << std::to_string(ros::Time::now().toSec()));
 
@@ -86,33 +83,38 @@ namespace mobilitypath_visualizer {
             msg.header.plan_id.compare(latest_cav_mob_path_msg_[msg.header.sender_id].header.plan_id) == 0 &&
             msg.header.timestamp == latest_cav_mob_path_msg_[msg.header.sender_id].header.timestamp)
         {
+            ROS_ERROR_STREAM("Already received this plan id:" << msg.header.plan_id << "from sender_id: " << msg.header.sender_id);
             ROS_DEBUG_STREAM("Already received this plan id:" << msg.header.plan_id << "from sender_id: " << msg.header.sender_id);
             return;
         }
         latest_cav_mob_path_msg_[msg.header.sender_id] = msg;
-
-        if (!map_projector_) {
-            ROS_DEBUG_STREAM("Cannot visualize mobility path as map projection not yet available");
-        }
-
-        MarkerColor cav_color;
-        if (msg.header.sender_id.compare(host_id_) ==0)
+        try
         {
-            cav_color.green = 1.0;
-            host_marker_ = composeVisualizationMarker(msg,cav_color);
-            host_marker_received_ = true;
-            ROS_DEBUG_STREAM("Composed host marker successfuly!");
+            tf2::convert(tf2_buffer_.lookupTransform("earth", "map", ros::Time(0)).transform, map_in_earth_); 
+            MarkerColor cav_color;
+            if (msg.header.sender_id.compare(host_id_) ==0)
+            {
+                cav_color.green = 1.0;
+                host_marker_ = composeVisualizationMarker(msg,cav_color, map_in_earth_);
+                host_marker_received_ = true;
+                ROS_ERROR_STREAM("Composed host marker successfuly!");
+                ROS_DEBUG_STREAM("Composed host marker successfuly!");
+            }
+            else
+            {
+                cav_color.blue = 1.0;
+                cav_markers_.push_back(composeVisualizationMarker(msg,cav_color, map_in_earth_));
+                ROS_ERROR_STREAM("Composed cav marker successfuly! with sender_id: " << msg.header.sender_id);
+                ROS_DEBUG_STREAM("Composed cav marker successfuly! with sender_id: " << msg.header.sender_id);
+            }
         }
-        else
+        catch (const tf2::TransformException &ex)
         {
-            cav_color.blue = 1.0;
-            cav_markers_.push_back(composeVisualizationMarker(msg,cav_color));
-            ROS_DEBUG_STREAM("Composed cav marker successfuly! with sender_id: " << msg.header.sender_id);
+            ROS_WARN("%s", ex.what());
         }
-
     }
 
-    visualization_msgs::MarkerArray MobilityPathVisualizer::composeVisualizationMarker(const cav_msgs::MobilityPath& msg, const MarkerColor& color)
+    visualization_msgs::MarkerArray MobilityPathVisualizer::composeVisualizationMarker(const cav_msgs::MobilityPath& msg, const MarkerColor& color, const tf2::Transform& map_in_earth)
     {
         visualization_msgs::MarkerArray output;
         
@@ -139,15 +141,17 @@ namespace mobilitypath_visualizer {
         
         marker.id = 0;
         geometry_msgs::Point arrow_start;
+        ROS_ERROR_STREAM("ECEF point x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
         ROS_DEBUG_STREAM("ECEF point x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
-        arrow_start = ECEFToMapPoint(curr_location_msg.trajectory.location); //also convert from cm to m
+        arrow_start = ECEFToMapPoint(curr_location_msg.trajectory.location,map_in_earth); //also convert from cm to m
+        ROS_ERROR_STREAM("Map point x: " << arrow_start.x << ", y:" << arrow_start.y);
         ROS_DEBUG_STREAM("Map point x: " << arrow_start.x << ", y:" << arrow_start.y);
 
         geometry_msgs::Point arrow_end;
         curr_location_msg.trajectory.location.ecef_x += + msg.trajectory.offsets[0].offset_x;
         curr_location_msg.trajectory.location.ecef_y += + msg.trajectory.offsets[0].offset_y;
         curr_location_msg.trajectory.location.ecef_z += + msg.trajectory.offsets[0].offset_z;
-        arrow_end = ECEFToMapPoint(curr_location_msg.trajectory.location); //also convert from cm to m
+        arrow_end = ECEFToMapPoint(curr_location_msg.trajectory.location,map_in_earth); //also convert from cm to m
 
         marker.points.push_back(arrow_start);
         marker.points.push_back(arrow_end);
@@ -164,39 +168,47 @@ namespace mobilitypath_visualizer {
             }
 
             marker.points = {};
+            ROS_ERROR_STREAM("ECEF Point- DEBUG x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
             ROS_DEBUG_STREAM("ECEF Point- DEBUG x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
-            arrow_start = ECEFToMapPoint(curr_location_msg.trajectory.location); //convert from cm to m
+            arrow_start = ECEFToMapPoint(curr_location_msg.trajectory.location,map_in_earth); //convert from cm to m
+            ROS_ERROR_STREAM("Map Point- DEBUG x: " << arrow_start.x << ", y:" << arrow_start.y);
             ROS_DEBUG_STREAM("Map Point- DEBUG x: " << arrow_start.x << ", y:" << arrow_start.y);
 
             curr_location_msg.trajectory.location.ecef_x += msg.trajectory.offsets[i].offset_x;
             curr_location_msg.trajectory.location.ecef_y += msg.trajectory.offsets[i].offset_y;
             curr_location_msg.trajectory.location.ecef_z += msg.trajectory.offsets[i].offset_z;
-            arrow_end = ECEFToMapPoint(curr_location_msg.trajectory.location);
+            arrow_end = ECEFToMapPoint(curr_location_msg.trajectory.location,map_in_earth);
 
             marker.points.push_back(arrow_start);
             marker.points.push_back(arrow_end);
 
             output.markers.push_back(marker);
         }
+        ROS_ERROR_STREAM("Last ECEF Point- DEBUG x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
         ROS_DEBUG_STREAM("Last ECEF Point- DEBUG x: " << curr_location_msg.trajectory.location.ecef_x << ", y:" << curr_location_msg.trajectory.location.ecef_y);
+        ROS_ERROR_STREAM("Last Map Point- DEBUG x: " << arrow_end.x << ", y:" << arrow_end.y);
         ROS_DEBUG_STREAM("Last Map Point- DEBUG x: " << arrow_end.x << ", y:" << arrow_end.y);
         prev_marker_list_size_[msg.header.sender_id] = msg.trajectory.offsets.size();
         
         return output;
     }
 
-    geometry_msgs::Point MobilityPathVisualizer::ECEFToMapPoint(const cav_msgs::LocationECEF& ecef_point) const
+    geometry_msgs::Point MobilityPathVisualizer::ECEFToMapPoint(const cav_msgs::LocationECEF& ecef_point, const tf2::Transform& map_in_earth) const
     {
-
-        if (!map_projector_) {
-            throw std::invalid_argument("No map projector available for ecef conversion");
-        }
         geometry_msgs::Point output;
-        
-        lanelet::BasicPoint3d map_point = map_projector_->projectECEF( { (double)ecef_point.ecef_x/100.0, (double)ecef_point.ecef_y/100.0, (double)ecef_point.ecef_z/100.0 } , -1);
-        output.x = map_point.x();
-        output.y = map_point.y();
-        output.z = map_point.z();
+        // convert input point to transform
+        tf2::Transform point_in_earth;
+        tf2::Quaternion no_rotation(0, 0, 0, 1);
+        tf2::Vector3 input_point {(double)ecef_point.ecef_x/100.0, (double)ecef_point.ecef_y/100.0, (double)ecef_point.ecef_z/100.0}; //m to cm
+        point_in_earth.setOrigin(input_point);
+        point_in_earth.setRotation(no_rotation);
+        // convert to map frame by (T_e_m)^(-1) * T_e_p
+        tf2::Transform identity;
+        identity.setIdentity();
+        auto point_in_map = identity * point_in_earth;
+        output.x = point_in_map.getOrigin().getX();
+        output.y = point_in_map.getOrigin().getY();
+        output.z = point_in_map.getOrigin().getZ();
 
         return output;
     } 
@@ -261,49 +273,79 @@ namespace mobilitypath_visualizer {
         return output;
     }
 
-    std::vector<visualization_msgs::MarkerArray> MobilityPathVisualizer::matchTrajectoryTimestamps(const visualization_msgs::MarkerArray& host_marker, 
+    std::vector<visualization_msgs::MarkerArray> MobilityPathVisualizer::matchTrajectoryTimestamps(const ros::Time& starting_time_to_match, 
                                                                     const std::vector<visualization_msgs::MarkerArray>& cav_markers) const
     {
         std::vector<visualization_msgs::MarkerArray> synchronized_output;
+        ROS_ERROR_STREAM("Time to match: " << starting_time_to_match);
+        ROS_DEBUG_STREAM("Time to match: " << starting_time_to_match);
         for (auto const& curr_cav: cav_markers)
         {
             visualization_msgs::MarkerArray synchronized_marker_array;
-            unsigned int curr_idx = 0;
+            int curr_idx = 0;
             double time_step = 0.1;
             // although it is very rare to reach here
             // we do not need to visualize other car that starts "in the future", so skip
-            if (curr_cav.markers[0].header.stamp > host_marker.markers[0].header.stamp)
+            if (curr_cav.markers[0].header.stamp > starting_time_to_match)
             {
+                ROS_ERROR_STREAM("The car is in the future: curr_cav.markers[0].header.stamp: " << curr_cav.markers[0].header.stamp << 
+                    ", diff:" << curr_cav.markers[0].header.stamp - starting_time_to_match);
+                ROS_DEBUG_STREAM("The car is in the future: curr_cav.markers[0].header.stamp: " << curr_cav.markers[0].header.stamp << 
+                    ", diff:" << curr_cav.markers[0].header.stamp - starting_time_to_match);
                 continue;
             }
             // this marker is outdated, drop
-            if (curr_cav.markers.back().header.stamp + ros::Duration(time_step) < host_marker.markers[0].header.stamp) 
+            if (curr_cav.markers.back().header.stamp + ros::Duration(time_step) < starting_time_to_match) 
+            {
+                ROS_ERROR_STREAM("This car is outdated, drop. curr_cav.markers.back().header.stamp : " << curr_cav.markers.back().header.stamp  << 
+                    ", diff:" << curr_cav.markers.back().header.stamp + ros::Duration(time_step) - starting_time_to_match);
+                ROS_DEBUG_STREAM("This car is outdated, drop. curr_cav.markers.back().header.stamp : " << curr_cav.markers.back().header.stamp  << 
+                    ", diff:" << curr_cav.markers.back().header.stamp + ros::Duration(time_step) - starting_time_to_match);
+                
                 continue;
-
+            }
+                
+            ROS_ERROR_STREAM("Skipping until the index, starting at: " << curr_idx);
+            ROS_DEBUG_STREAM("Skipping until the index, starting at: " << curr_idx);
             // skip points until the idx to start interpolating
-            while (curr_idx < curr_cav.markers.size() && curr_cav.markers[curr_idx].header.stamp <= host_marker.markers[0].header.stamp)
+            while (curr_idx < curr_cav.markers.size() && curr_cav.markers[curr_idx].header.stamp <= starting_time_to_match)
             { 
                 curr_idx++;
             }
-            
             curr_idx -= 1; // cav_msg stamp is before that of host now
+            ROS_ERROR_STREAM("Skipped until the index, ending at: " << curr_idx);
+            ROS_DEBUG_STREAM("Skipped until the index, ending at: " << curr_idx);
 
             // interpolate position to match the starting time (dt < time_step)
-            double dt = (host_marker.markers[0].header.stamp - curr_cav.markers[curr_idx].header.stamp).toSec();
+            double dt = (starting_time_to_match - curr_cav.markers[curr_idx].header.stamp).toSec();
+            ROS_ERROR_STREAM("dt to interpolate: " << dt);
+            ROS_DEBUG_STREAM("dt to interpolate: " << dt);
             
-            ros::Time curr_time = host_marker.markers[0].header.stamp;
+            ros::Time curr_time = starting_time_to_match;
             
             // only update start_point of each arrow type marker for now
-
-            while (curr_idx < curr_cav.markers.size())
+            ROS_ERROR_STREAM("Starting to interpolate the rest starting at idx: " << curr_idx << " until size:" << curr_cav.markers.size());
+            ROS_DEBUG_STREAM("Starting to interpolate the rest starting at idx: " << curr_idx << " until size:" << curr_cav.markers.size());
+            int sync_idx = 0;
+            while (curr_idx < curr_cav.markers.size() && curr_cav.markers[curr_idx].action != visualization_msgs::Marker::DELETE)
             {
                 visualization_msgs::Marker curr_marker = curr_cav.markers[curr_idx]; //copy static info
+                curr_marker.id = sync_idx;
                 if (dt != 0.0) // if not already synchronized
                 {
                     double dx = (curr_cav.markers[curr_idx].points[1].x - curr_cav.markers[curr_idx].points[0].x)/time_step * dt;
                     double dy = (curr_cav.markers[curr_idx].points[1].y - curr_cav.markers[curr_idx].points[0].y)/time_step * dt;
                     double dz = (curr_cav.markers[curr_idx].points[1].z - curr_cav.markers[curr_idx].points[0].z)/time_step * dt;
-
+                    ROS_ERROR_STREAM("Future x: " << curr_cav.markers[curr_idx].points[1].x<< ", y:" << curr_cav.markers[curr_idx].points[1].y 
+                        << ", z"<< curr_cav.markers[curr_idx].points[1].z );
+                    ROS_DEBUG_STREAM("Future x: " << curr_cav.markers[curr_idx].points[1].x<< ", y:" << curr_cav.markers[curr_idx].points[1].y 
+                        << ", z"<< curr_cav.markers[curr_idx].points[1].z );
+                    ROS_ERROR_STREAM("Back x: " << curr_cav.markers[curr_idx].points[0].x<< ", y:" << curr_cav.markers[curr_idx].points[0].y 
+                        << ", z"<< curr_cav.markers[curr_idx].points[0].z );
+                    ROS_DEBUG_STREAM("Back x: " << curr_cav.markers[curr_idx].points[0].x<< ", y:" << curr_cav.markers[curr_idx].points[0].y 
+                        << ", z"<< curr_cav.markers[curr_idx].points[0].z );
+                    ROS_ERROR_STREAM("dx: " << dx << ", dy: " << dy << ", dz: " << dz );
+                    ROS_DEBUG_STREAM("dx: " << dx << ", dy: " << dy << ", dz: " << dz );
                     curr_marker.points[0].x += dx; 
                     curr_marker.points[0].y += dy;
                     curr_marker.points[0].z += dz;
@@ -311,32 +353,57 @@ namespace mobilitypath_visualizer {
                 } //else just loop and copy
                 curr_marker.header.stamp = curr_time;
                 synchronized_marker_array.markers.push_back(curr_marker);
+                sync_idx ++;
                 curr_idx ++;
                 curr_time += ros::Duration(time_step);
             }
+            ROS_ERROR_STREAM("Ended interpolating the rest starting at idx: " << curr_idx << " until size:" << curr_cav.markers.size());
+            ROS_DEBUG_STREAM("Ended interpolating the rest starting at idx: " << curr_idx << " until size:" << curr_cav.markers.size());
 
-            curr_idx = 0; // resetting idx to work on new, synchronized list
+            sync_idx = 0; // resetting idx to work on new, synchronized list
 
             // update end_point of each arrow type marker, except that of last point
-            while (curr_idx < synchronized_marker_array.markers.size()-1)
+            while (synchronized_marker_array.markers.size() >= 2 && sync_idx < synchronized_marker_array.markers.size()-2)
             {
-                synchronized_marker_array.markers[curr_idx].points[1] = synchronized_marker_array.markers[curr_idx + 1].points[0];
-                curr_idx ++;
+                synchronized_marker_array.markers[sync_idx].points[1] = synchronized_marker_array.markers[sync_idx + 1].points[0];
+                sync_idx ++;
             }
+            //synchronized_marker_array.markers[sync_idx].action = visualization_msgs::Marker::DELETE;
+            ROS_ERROR_STREAM("Finished the synchronization starting at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
+            ROS_DEBUG_STREAM("Finished the synchronization starting at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
+            
+            visualization_msgs::Marker curr_marker; //delete outdated markers from visualization
+            curr_marker.header.stamp = synchronized_marker_array.markers[sync_idx - 1].header.stamp; // preserve the last valid time
+            while (sync_idx < curr_cav.markers.size())
+            {
+                ROS_ERROR_STREAM("Starting extra marker at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
+                ROS_DEBUG_STREAM("Starting extra marker at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
 
+                curr_marker.id = sync_idx;
+                curr_marker.action = visualization_msgs::Marker::DELETE;
+                ROS_ERROR_STREAM("Deleting the extra marker at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
+                ROS_DEBUG_STREAM("Deleting the extra marker at idx: " << sync_idx << " until size:" << curr_cav.markers.size());
+
+                synchronized_marker_array.markers.push_back(curr_marker);
+                sync_idx ++;
+            }
+            
             // extrapolate the last point just to conform with 0.1s interval between points
-            double dx = (synchronized_marker_array.markers[curr_idx].points[1].x - synchronized_marker_array.markers[curr_idx].points[0].x)/(time_step - dt) * time_step;
-            double dy = (synchronized_marker_array.markers[curr_idx].points[1].y - synchronized_marker_array.markers[curr_idx].points[0].y)/(time_step - dt) * time_step;
-            double dz = (synchronized_marker_array.markers[curr_idx].points[1].z - synchronized_marker_array.markers[curr_idx].points[0].z)/(time_step - dt) * time_step;
+            // double dx = (synchronized_marker_array.markers[curr_idx].points[1].x - synchronized_marker_array.markers[curr_idx].points[0].x)/(time_step - dt) * time_step;
+            // double dy = (synchronized_marker_array.markers[curr_idx].points[1].y - synchronized_marker_array.markers[curr_idx].points[0].y)/(time_step - dt) * time_step;
+            // double dz = (synchronized_marker_array.markers[curr_idx].points[1].z - synchronized_marker_array.markers[curr_idx].points[0].z)/(time_step - dt) * time_step;
 
-            synchronized_marker_array.markers[curr_idx].points[1].x = synchronized_marker_array.markers[curr_idx].points[0].x + dx; 
-            synchronized_marker_array.markers[curr_idx].points[1].y = synchronized_marker_array.markers[curr_idx].points[0].y + dy;
-            synchronized_marker_array.markers[curr_idx].points[1].z = synchronized_marker_array.markers[curr_idx].points[0].z + dz; 
-
+            // synchronized_marker_array.markers[curr_idx].points[1].x = synchronized_marker_array.markers[curr_idx].points[0].x + dx; 
+            // synchronized_marker_array.markers[curr_idx].points[1].y = synchronized_marker_array.markers[curr_idx].points[0].y + dy;
+            // synchronized_marker_array.markers[curr_idx].points[1].z = synchronized_marker_array.markers[curr_idx].points[0].z + dz; 
+            // 
 
             synchronized_output.push_back(synchronized_marker_array);
-            
+            ROS_ERROR_STREAM("curr_cav start with size: " << curr_cav.markers.size() << ", new synchronized size: " << synchronized_marker_array.markers.size());
+            ROS_DEBUG_STREAM("curr_cav start with size: " << curr_cav.markers.size() << ", new synchronized size: " << synchronized_marker_array.markers.size());
         }
+        ROS_ERROR_STREAM("Returning synchronized marker_arrays of size:" << synchronized_output.size());
+        ROS_DEBUG_STREAM("Returning synchronized marker_arrays of size:" << synchronized_output.size());
 
         return synchronized_output;
     }
@@ -344,22 +411,75 @@ namespace mobilitypath_visualizer {
     bool MobilityPathVisualizer::spinCallback()
     {
         // match cav_markers' timestamps to that of host
+        ROS_ERROR_STREAM("Spin callback1");
         if (!host_marker_received_)
             return true;
 
+        ROS_ERROR_STREAM("Spin callback2");
+
         // publish host marker
+        auto time_now = ros::Time::now();
+
+        std::vector<visualization_msgs::MarkerArray> host_markers = matchTrajectoryTimestamps(time_now, {host_marker_});
+        if (host_markers.size() != 0 ) 
+        {
+            host_marker_ = host_markers[0];
+        }
+        else
+        {
+            ROS_ERROR_STREAM("There was error in matching time for host marker!");
+            return true;
+        }
+        ROS_ERROR_STREAM("Publishing host_marker with time starting at: " << host_marker_.markers.front().header.stamp 
+                 << ", and ending at: " << host_marker_.markers.front().header.stamp);
+        ROS_DEBUG_STREAM("Publishing host_marker with time starting at: " << host_marker_.markers.front().header.stamp 
+                << ", and ending at: " << host_marker_.markers.front().header.stamp);
         host_marker_pub_.publish(host_marker_);
 
-        cav_markers_ = matchTrajectoryTimestamps(host_marker_, cav_markers_);
-
+        cav_markers_ = matchTrajectoryTimestamps(time_now, cav_markers_);
+        ROS_ERROR_STREAM("After matching, remaining markers' size: " << cav_markers_.size());
+        ROS_DEBUG_STREAM("After matching, remaining markers' size: " << cav_markers_.size());
         for (auto const &marker: cav_markers_)
         {
+            ROS_ERROR_STREAM("Publishing cav_marker with time starting at: " << marker.markers.front().header.stamp 
+                << ", and ending at: " << marker.markers.front().header.stamp);
+            ROS_DEBUG_STREAM("Publishing cav_marker with time starting at: " << marker.markers.front().header.stamp 
+                << ", and ending at: " << marker.markers.front().header.stamp);
             cav_marker_pub_.publish(marker);
         }
 
         // publish label
         label_marker_ = composeLabelMarker(host_marker_, cav_markers_);
         label_marker_pub_.publish(label_marker_);
+
+        // Clean DELETE ones
+        for (int i = 0; i < cav_markers_.size(); i ++)
+        {
+            int idx_to_cut = 0;
+            for (int j = 0; j < cav_markers_[i].markers.size(); j ++)
+            {
+                if (cav_markers_[i].markers[j].action == visualization_msgs::Marker::DELETE)
+                {
+                    idx_to_cut = j;
+                    ROS_ERROR_STREAM("CLEANING CAV: Cutting from idx: " << idx_to_cut );
+                    ROS_DEBUG_STREAM("CLEANING CAV: Cutting from idx: " << idx_to_cut );
+                }
+            }
+            cav_markers_[i].markers.resize(idx_to_cut + 1); 
+        }
+
+        int idx_to_cut = 0;
+        for (int j = 0; j < host_marker_.markers.size(); j ++)
+        {
+            if (host_marker_.markers[j].action == visualization_msgs::Marker::DELETE)
+            {
+                idx_to_cut = j;
+                ROS_ERROR_STREAM("CLEANING HOST: Cutting from idx: " << idx_to_cut );
+                ROS_DEBUG_STREAM("CLEANING HOST: Cutting from idx: " << idx_to_cut );
+            }
+        }
+        host_marker_.markers.resize(idx_to_cut + 1); 
+
         return true;
     }
 
