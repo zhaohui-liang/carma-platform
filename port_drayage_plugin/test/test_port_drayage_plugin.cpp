@@ -621,6 +621,52 @@ TEST(PortDrayageTest, testInboundMobilityOperation)
     ASSERT_EQ("32", action_id);
     ASSERT_NEAR(38.95622708, vehicle_latitude, 0.001);
     ASSERT_NEAR(-77.15066142, vehicle_longitude, 0.001);
+
+    // Create an "EXIT_STAGING_AREA" MobilityOperationConstPtr for the PortDrayageWorker
+    cav_msgs::MobilityOperation mobility_operation_msg4;
+    mobility_operation_msg4.strategy = "carma/port_drayage";
+    mobility_operation_msg4.strategy_params = "{ \"cmv_id\": \"123\", \"location\"\
+        : { \"latitude\": \"38.9554557\", \"longitude\": \"-77.1503441\" }, \"destination\": { \"latitude\"\
+        : \"38.9550938\", \"longitude\": \"-77.1481563\" }, \"operation\": \"EXIT_STAGING_AREA\", \"action_id\"\
+        : \"35\" }";
+    cav_msgs::MobilityOperationConstPtr mobility_operation_msg_ptr4(new cav_msgs::MobilityOperation(mobility_operation_msg4));
+    pdw2.on_inbound_mobility_operation(mobility_operation_msg_ptr4);
+
+    // Check that the contents of the received message was not parsed and stored since it was not intended for this CMV
+    ASSERT_EQ("EXIT_STAGING_AREA", pdw2._latest_mobility_operation_msg.operation);
+    ASSERT_EQ(port_drayage_plugin::PortDrayageEvent::RECEIVED_NEW_DESTINATION, pdw2._latest_mobility_operation_msg.port_drayage_event_type);
+    ASSERT_EQ(false, pdw2._latest_mobility_operation_msg.has_cargo);
+    ASSERT_NEAR(-77.1503441, *pdw2._latest_mobility_operation_msg.start_longitude, 0.00000001);
+    ASSERT_NEAR(38.9554557, *pdw2._latest_mobility_operation_msg.start_latitude, 0.00000001);
+    ASSERT_NEAR(-77.1481563, *pdw2._latest_mobility_operation_msg.dest_longitude, 0.00000001);
+    ASSERT_NEAR(38.9550938, *pdw2._latest_mobility_operation_msg.dest_latitude, 0.00000001);
+    ASSERT_EQ("35", *pdw2._latest_mobility_operation_msg.current_action_id);
+
+    // Test composeArrivalMessage for when CMV has arrived at the Staging Area Exit
+
+    // Obtain the contents of the broadcasted message when the CMV arrives at the Loading Area
+    cav_msgs::MobilityOperation msg2 = pdw2.compose_arrival_message();
+    std::istringstream strstream2(msg2.strategy_params);
+    ptree pt2;
+    boost::property_tree::json_parser::read_json(strstream2, pt2);
+
+    cmv_id = pt2.get<unsigned long>("cmv_id");
+    has_cargo = pt2.get<bool>("cargo");
+    action_id = pt2.get<std::string>("action_id");
+    operation = pt2.get<std::string>("operation");
+    vehicle_longitude = pt2.get<double>("location.longitude");
+    vehicle_latitude = pt2.get<double>("location.latitude");
+
+    // Verify the contents of the broadcasted message
+    ASSERT_EQ("carma/port_drayage", msg2.strategy);
+    ASSERT_EQ("TEST_CARMA_HOST_ID", msg2.header.sender_id);
+    ASSERT_FALSE(msg2.strategy_params.empty());
+    ASSERT_EQ(123, cmv_id);
+    ASSERT_TRUE(has_cargo); // CMV should be carrying cargo since the previous action was for 'PICKUP'
+    ASSERT_EQ("EXIT_STAGING_AREA", operation);
+    ASSERT_EQ("35", action_id);
+    ASSERT_NEAR(38.95622708, vehicle_latitude, 0.001); // Uses the latitude from the pose and map projector provided previously
+    ASSERT_NEAR(-77.15066142, vehicle_longitude, 0.001); // Uses the longitude from the pose and map projector provided previously
 }
 
 TEST(PortDrayageTest, testComposeUIInstructions)
