@@ -52,6 +52,7 @@ InLaneCruisingPlugin::InLaneCruisingPlugin(carma_wm::WorldModelConstPtr wm, InLa
 
 bool InLaneCruisingPlugin::onSpin()
 {
+  ROS_DEBUG_STREAM("OnSpin()");
   plugin_discovery_publisher_(plugin_discovery_msg_);
   return true;
 }
@@ -59,6 +60,7 @@ bool InLaneCruisingPlugin::onSpin()
 bool InLaneCruisingPlugin::plan_trajectory_cb(cav_srvs::PlanTrajectoryRequest& req,
                                               cav_srvs::PlanTrajectoryResponse& resp)
 {
+  ROS_DEBUG_STREAM("PlanTrajCallback");
    ros::WallTime start_time = ros::WallTime::now();  // Start timeing the execution time for planning so it can be logged
 
   lanelet::BasicPoint2d veh_pos(req.vehicle_state.X_pos_global, req.vehicle_state.Y_pos_global);
@@ -85,7 +87,7 @@ bool InLaneCruisingPlugin::plan_trajectory_cb(cav_srvs::PlanTrajectoryRequest& r
   wpg_general_config = basic_autonomy:: waypoint_generation::compose_general_trajectory_config("inlanecruising",
                                                                               config_.default_downsample_ratio,
                                                                               config_.turn_downsample_ratio);
-
+ROS_DEBUG_STREAM("Compose General Trajectory Success");
   wpg_detail_config = basic_autonomy:: waypoint_generation::compose_detailed_trajectory_config(config_.trajectory_time_length, 
                                                                             config_.curve_resample_step_size, config_.minimum_speed, 
                                                                             config_.max_accel * config_.max_accel_multiplier,
@@ -94,6 +96,7 @@ bool InLaneCruisingPlugin::plan_trajectory_cb(cav_srvs::PlanTrajectoryRequest& r
                                                                             config_.curvature_moving_average_window_size, config_.back_distance,
                                                                             config_.buffer_ending_downtrack);
   
+  ROS_DEBUG_STREAM("Compose Detailed Trajectory Success");
   auto points_and_target_speeds = basic_autonomy::waypoint_generation::create_geometry_profile(maneuver_plan, std::max((double)0, current_downtrack - config_.back_distance),
                                                                          wm_, ending_state_before_buffer_, req.vehicle_state, wpg_general_config, wpg_detail_config);
 
