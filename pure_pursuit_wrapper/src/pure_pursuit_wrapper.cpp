@@ -99,6 +99,12 @@ std::vector<double> PurePursuitWrapper::apply_response_lag(const std::vector<dou
     return output;
   }
 
+  if (speeds[0] < 1.34112) // crawl speed
+  {
+    ROS_DEBUG_STREAM("Crawl speed detected, no response lag needed");
+    return speeds;
+  }
+
   double lookahead_distance = speeds[0] * response_lag;
 
   double downtrack_cutoff = downtracks[0] + lookahead_distance;

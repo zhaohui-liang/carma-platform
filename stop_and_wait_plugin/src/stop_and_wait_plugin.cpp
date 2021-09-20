@@ -287,7 +287,15 @@ std::vector<cav_msgs::TrajectoryPlanPoint> StopandWait::compose_trajectory_from_
 
     constexpr double half_a_mph_in_mps = 0.22352;
 
-    if (downtrack > downtracks.back() - stop_location_buffer && speeds[i] < config_.crawl_speed + half_a_mph_in_mps)
+    // if current_state is not within stopping buffer, but close to crawl speed, apply uniform crawl speed
+    if (starting_downtrack < downtracks.back() - stop_location_buffer && speeds[i] < config_.crawl_speed + half_a_mph_in_mps) 
+    {
+      if (i < speeds.size())
+        speeds[i] = std::max(speeds[i], config_.crawl_speed);
+      else
+        speeds.back() = 0.0; //last point
+    }
+    else if (downtrack > downtracks.back() - stop_location_buffer && speeds[i] < config_.crawl_speed + half_a_mph_in_mps)
     {  // if we are within the stopping buffer and going at near crawl speed then command stop
       speeds[i] = 0.0;
 
@@ -301,10 +309,7 @@ std::vector<cav_msgs::TrajectoryPlanPoint> StopandWait::compose_trajectory_from_
       raw_points[i] = stopped_point;
       stopped_point_num++;
     }
-    else
-    {
-      speeds[i] = std::max(speeds[i], config_.crawl_speed);
-    }
+    
   }
 
   std::vector<double> times;

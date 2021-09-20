@@ -219,6 +219,7 @@ void WzStrategicPlugin::planWhenAPPROACHING(const cav_srvs::PlanManeuversRequest
 
   double distance_remaining_to_traffic_light = traffic_light_down_track - current_state.downtrack;
 
+  ROS_DEBUG_STREAM("distance_remaining_to_traffic_light: " << fabs(distance_remaining_to_traffic_light));
   // If the vehicle is at a stop trigger the
   constexpr double HALF_MPH_IN_MPS = 0.22352;
   if (current_state.speed < HALF_MPH_IN_MPS &&
