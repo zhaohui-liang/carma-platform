@@ -244,6 +244,17 @@ private:
    */
   double estimate_time_to_stop(double d, double v) const;
 
+
+  /**
+   * \brief Helper function to extract the stop bar location of the first light and adjust the current_downtrack by the vehicle length
+   *
+   * \param traffic_lights List of downtrack sorted traffic lights located in front of current_downtrack
+   * \param current_downtrack The downtrack of the vehicle's back axel. This will be corrected to vehicle front bumper in this function
+   *  
+   * \return Distance in meters from the front bumper to the frist light stop bar
+   */
+  double distance_to_first_stop_bar(const std::vector<lanelet::CarmaTrafficLightPtr>& traffic_lights, double current_downtrack) const;
+
   /**
    * \brief Given a Lanelet, find it's associated Speed Limit
    *

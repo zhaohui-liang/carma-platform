@@ -89,6 +89,15 @@ double WzStrategicPlugin::estimate_time_to_stop(double d, double v) const // TOD
   return 2.0 * d / v;
 };
 
+double WzStrategicPlugin::distance_to_first_stop_bar(const std::vector<lanelet::CarmaTrafficLightPtr>& traffic_lights, double current_downtrack) const {
+  double traffic_light_down_track =
+      wm_->routeTrackPos(traffic_lights.front()->stopLine().front().front().basicPoint2d()).downtrack;
+
+  ROS_DEBUG("traffic_light_down_track %f", traffic_light_down_track);
+
+  return traffic_light_down_track - (current_downtrack + config_.vehicle_length);
+}
+
 WzStrategicPlugin::VehicleState WzStrategicPlugin::extractInitialState(const cav_srvs::PlanManeuversRequest& req) const
 {
   VehicleState state;
@@ -170,12 +179,7 @@ void WzStrategicPlugin::planWhenUNAVAILABLE(const cav_srvs::PlanManeuversRequest
     return;
   }
 
-  double traffic_light_down_track =
-      wm_->routeTrackPos(traffic_lights.front()->stopLine().front().front().basicPoint2d()).downtrack;
-
-  ROS_DEBUG("traffic_light_down_track %f", traffic_light_down_track);
-
-  double distance_remaining_to_traffic_light = traffic_light_down_track - current_state.downtrack;
+  double distance_remaining_to_traffic_light = distance_to_first_stop_bar(traffic_lights, current_state.downtrack);
 
   ROS_DEBUG("distance_remaining_to_traffic_light %f", distance_remaining_to_traffic_light);
 
@@ -212,12 +216,10 @@ void WzStrategicPlugin::planWhenAPPROACHING(const cav_srvs::PlanManeuversRequest
 
   auto nearest_traffic_light = traffic_lights.front();
 
+  double distance_remaining_to_traffic_light = distance_to_first_stop_bar(traffic_lights, current_state.downtrack); // This distance accounts for vehicle length
+
   double traffic_light_down_track =
-      wm_->routeTrackPos(nearest_traffic_light->stopLine().front().front().basicPoint2d()).downtrack;
-
-  ROS_DEBUG("traffic_light_down_track %f", traffic_light_down_track);
-
-  double distance_remaining_to_traffic_light = traffic_light_down_track - current_state.downtrack;
+      wm_->routeTrackPos(nearest_traffic_light->stopLine().front().front().basicPoint2d()).downtrack; // This is the raw stop bar location
 
   // If the vehicle is at a stop trigger the
   constexpr double HALF_MPH_IN_MPS = 0.22352;
@@ -308,7 +310,7 @@ void WzStrategicPlugin::planWhenAPPROACHING(const cav_srvs::PlanManeuversRequest
   {
     ROS_DEBUG_STREAM("Planning stop and wait maneuver");
     resp.new_plan.maneuvers.push_back(composeStopAndWaitManeuverMessage(
-        current_state.downtrack, traffic_light_down_track - config_.vehicle_length, current_state.speed, crossed_lanelets.front().id(),
+        current_state.downtrack, current_state.downtrack + distance_remaining_to_traffic_light, current_state.speed, crossed_lanelets.front().id(),
         crossed_lanelets.back().id(), current_state.stamp,
         req.header.stamp + ros::Duration(config_.min_maneuver_planning_period)));
   }
