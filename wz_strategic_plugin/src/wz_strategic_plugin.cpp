@@ -246,7 +246,7 @@ void WzStrategicPlugin::planWhenAPPROACHING(const cav_srvs::PlanManeuversRequest
   // In the case of higher accel limits this calculation should always overestimate the arrival time which should be
   // fine as that would hit the following red phase.
   double time_remaining_to_traffic_light =
-      (2.0 * distance_remaining_to_traffic_light) /
+      (2.0 * (distance_remaining_to_traffic_light - config_.vehicle_length)) / //Adjust the value of the distance remaining to traffic light by subtracting the vehicle length
       (intersection_speed_.get() + current_state.speed);  // Kinematic Equation: 2*d / (vf + vi) = t
 
   ROS_DEBUG_STREAM("time_remaining_to_traffic_light: " << time_remaining_to_traffic_light);
