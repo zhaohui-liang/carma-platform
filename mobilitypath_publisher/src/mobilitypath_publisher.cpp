@@ -113,6 +113,8 @@ namespace mobilitypath_publisher
         }
         else{
             cav_msgs::LocationECEF prev_point = ecef_location;
+
+
             for (size_t i=1; i<traj_points.size(); i++){
                 
                 cav_msgs::LocationOffsetECEF offset;
@@ -122,6 +124,8 @@ namespace mobilitypath_publisher
                 offset.offset_z = (int16_t)(new_point.ecef_z - prev_point.ecef_z);
                 prev_point = new_point;
                 traj.offsets.push_back(offset);
+
+                if( i >= 60 ){ break;};
             }
         }
 
