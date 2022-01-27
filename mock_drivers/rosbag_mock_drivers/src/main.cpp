@@ -25,6 +25,7 @@
 #include <rosbag_mock_drivers/MockLidarDriver.h>
 #include <rosbag_mock_drivers/MockRadarDriver.h>
 #include <rosbag_mock_drivers/MockRoadwaySensorDriver.h>
+#include <iostream>
 
 int main(int argc, char** argv)
 {
@@ -51,6 +52,7 @@ int main(int argc, char** argv)
   else if (strcmp("controller", argv[1]) == 0)
   {
     mock_drivers::MockControllerDriver node;
+    std::cout << "inside the loop " << std::endl;
     node.run();
   }
 

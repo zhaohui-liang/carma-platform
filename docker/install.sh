@@ -23,9 +23,13 @@ source /opt/ros/kinetic/setup.bash
 source /opt/autoware.ai/ros/install/setup.bash --extend
 
 cd ~/carma_ws
-./src/carma-platform/carma_build.bash -c ~/carma_ws -a /opt/autoware.ai/ -x -m "-DCMAKE_BUILD_TYPE=Release"
+sudo mkdir -p /opt/carma # Create install directory
+sudo chown carma /opt/carma # Set owner to expose permissions for build
+sudo chgrp carma /opt/carma # Set group to expose permissions for build
 
-# Copy the installed files
-cd ~/carma_ws 
-cp -r install/. /opt/carma/install
-chmod -R +x /opt/carma/install 
+echo "Building CARMA"
+# --packages-up-to traffic_incident_parser platoon_strategic
+colcon build --install-base /opt/carma/install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-up-to rosbag_mock_drivers carma driver_shutdown
+#--packages-up-to rosbag_mock_drivers
+#--packages-up-to rosbag_mock_drivers carma driver_shutdown
+echo "Build Complete"

@@ -20,6 +20,7 @@
 #include <autoware_msgs/VehicleCmd.h>
 #include <cav_msgs/RobotEnabled.h>
 #include <cav_srvs/SetEnableRobotic.h>
+#include <gps_common/GPSFix.h>
 
 namespace mock_drivers
 {
@@ -29,15 +30,17 @@ class MockControllerDriver : public MockDriver
 private:
   boost::shared_ptr<ROSComms<cav_msgs::RobotEnabled>> robot_status_ptr_;
   ConstPtrRefROSCommsPtr<autoware_msgs::VehicleCmd> vehicle_cmd_ptr_;
+  boost::shared_ptr<ROSComms<geometry_msgs::TwistStamped>> twist_ptr_;
+  boost::shared_ptr<ROSComms<gps_common::GPSFix>> speed_ptr_;
   boost::shared_ptr<ROSComms<cav_srvs::SetEnableRobotic::Request&, cav_srvs::SetEnableRobotic::Response&>>
       enable_robotic_ptr_;
 
   // Pub
-  const std::string robot_status_topic_ = "controller/robot_status";
+  const std::string robot_status_topic_ = "/controller/robot_status";
 
   // Sub
-  const std::string vehicle_cmd_topic_ = "vehicle_cmd";
-  const std::string enable_robotic_srv_ = "controller/enable_robotic";
+  const std::string vehicle_cmd_topic_ = "/hardware_interface/vehicle_cmd";
+  const std::string enable_robotic_srv_ = "/controller/enable_robotic";
 
   // Robot Status flags
   bool robot_active_ = false;
@@ -64,7 +67,7 @@ public:
    * \return Flag idicating if the service was processed successfully. 
    */ 
   bool enableRoboticSrv(const cav_srvs::SetEnableRobotic::Request& req, cav_srvs::SetEnableRobotic::Response& res);
-
+  void SpeedCallback(const gps_common::GPSFix& msg);
   // Overrides
   MockControllerDriver(bool dummy = false);
   ~MockControllerDriver() {};
